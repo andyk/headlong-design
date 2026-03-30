@@ -1,4 +1,5 @@
 # GEPA Prompt Optimization for Headlong's Thought Generation
+Author: Claude 4.6 Opus Extended + Andy
 
 ## Overview
 
