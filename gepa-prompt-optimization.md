@@ -25,7 +25,10 @@ If we later decide to co-evolve multiple text components (e.g., the thought gen 
 │                                                             │
 │  seed_candidate: current RLM prompt text                    │
 │  objective: "produce thoughts matching human-quality edits" │
-│  evaluator: evaluate()                                      │
+│  evaluator: evaluate(candidate, example)                    │
+│  trainset: train_examples                                   │
+│  valset: val_examples                                       │
+│  background: RLM explanation (see below)                    │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │              Evolutionary Loop                       │   │
@@ -39,9 +42,9 @@ If we later decide to co-evolve multiple text components (e.g., the thought gen 
 │                          │                                   │
 │                          ▼                                   │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │              evaluate(candidate_prompt)               │   │
+│  │        evaluate(candidate_prompt, example)             │   │
 │  │                                                      │   │
-│  │  1. Pick a stream snapshot from trainset             │   │
+│  │  1. Receive a stream snapshot from GEPA              │   │
 │  │  2. Run RLM loop offline with candidate prompt       │   │
 │  │  3. Log rich traces via oa.log()                     │   │
 │  │  4. Score via LLM-as-judge                           │   │
@@ -177,8 +180,8 @@ For each contrastive pair, use an LLM to generate a textual diagnosis of what we
 def diagnose_edit(context: list[str], original: str, human_edit: str) -> str:
     prompt = f"""Compare these two thoughts for an AI agent's stream of consciousness.
 
-Recent context (last 5 thoughts):
-{chr(10).join(context[-5:])}
+Recent context (last 40 thoughts):
+{chr(10).join(context[-40:])}
 
 Agent's original thought:
 {original}
@@ -427,7 +430,6 @@ Putting it all together in the `optimize_anything` evaluator:
 ```python
 import gepa.optimize_anything as oa
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
-import random
 
 # Pre-built from the extraction pipeline
 trainset: list[ThoughtStreamSnapshot] = build_trainset("Gandalf Overmind")
@@ -438,9 +440,14 @@ split = int(len(trainset) * 0.8)
 train_examples = trainset[:split]
 val_examples = trainset[split:]
 
-def evaluate(candidate_prompt: str) -> float:
-    # Pick a random stream snapshot
-    snapshot = random.choice(train_examples)
+def evaluate(candidate_prompt: str, example: ThoughtStreamSnapshot) -> float:
+    """Evaluate a candidate prompt against a specific trainset example.
+
+    GEPA calls this with a specific example from the trainset/valset,
+    allowing it to choose which datapoints to improve upon and get
+    targeted feedback on each one.
+    """
+    snapshot = example
 
     # Run the RLM loop offline with this candidate prompt
     result = run_rlm_loop_offline(
@@ -454,8 +461,8 @@ def evaluate(candidate_prompt: str) -> float:
     # so it can diagnose *why* a prompt variant failed and propose
     # targeted fixes.
 
-    oa.log(f"=== STREAM CONTEXT (last 5 thoughts) ===")
-    for t in snapshot.stream_context[-5:]:
+    oa.log(f"=== STREAM CONTEXT (last 40 thoughts) ===")
+    for t in snapshot.stream_context[-40:]:
         oa.log(t)
 
     oa.log(f"\n=== GENERATED THOUGHT ===")
@@ -515,6 +522,8 @@ with open("thought_generator_rlm_prompt.md") as f:
 result = optimize_anything(
     seed_candidate=seed_prompt,
     evaluator=evaluate,
+    trainset=train_examples,
+    valset=val_examples,
     objective=(
         "Optimize this RLM thought generation prompt for an AI agent's "
         "stream of consciousness. The prompt governs a 4-phase lifecycle "
@@ -523,6 +532,22 @@ result = optimize_anything(
         "continue naturally from context, advance the stream without "
         "restating, act on expressed intentions, follow action:/observation: "
         "formatting rules, and match the quality of human-edited versions."
+    ),
+    background=(
+        "Recursive Language Models (RLMs) are a framework where an LLM is "
+        "given a REPL (read-eval-print loop) environment and generates its "
+        "output through iterative self-refinement rather than a single forward "
+        "pass. The LLM writes code in the REPL to gather context, generate "
+        "candidates, evaluate them, and produce a final output — all within a "
+        "multi-turn loop. In Headlong, the RLM pattern is used for thought "
+        "generation: the agent's 'unconscious mind' prompt drives a 4-phase "
+        "lifecycle (Phase 1: gather context via SQL/vector search, Phase 2: "
+        "generate candidate thoughts, Phase 3: judge and select the best "
+        "candidate, Phase 4: format and finalize) that produces the next "
+        "thought in the agent's stream of consciousness. The prompt being "
+        "optimized here governs this entire lifecycle — it is the system "
+        "prompt that instructs the LLM on how to use the REPL to produce "
+        "each thought. See: https://arxiv.org/abs/2512.24601"
     ),
     config=GEPAConfig(
         engine=EngineConfig(
