@@ -10,7 +10,7 @@
 
 ### Detailed feature of roadmap
 
-- [ ] rework cognitive architecture to have a generic thought graph and add the following "cognition"-types: memory/value/intention/objective/goal/task/value/belief/fact/skill?  
+- [ ] rework cognitive architecture to have a generic thought graph and add the following "cognition"-types: memory/intention/objective/goal/task/value/belief/fact
 - [ ] have bobby wilder generate at least N thoughts every time an observation enters his thought stream  
 - [ ] move system prompts into github (and only have history/backups of them in supabase)  
 - [ ] Add “beliefs” and “values” thought types to cognitive architecture: (i) beliefs (the english will convey the level of conviction), (ii) values  
